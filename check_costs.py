@@ -1,16 +1,20 @@
 import os
 import requests
 from datetime import datetime
+import json
 
 # --- НАСТРОЙКИ ---
-COIN_IDS = ["ethereum", "solana", "uniswap", "the-open-network"]
 VS_CURRENCY = "usd"
-PURCHASE_PRICES = {
-    "ethereum": 2598,
-    "solana": 178.8,
-    "uniswap": 6.26,
-    "the-open-network": 3.03,
-}
+
+# Словарь цен покупки загружается из переменной окружения
+try:
+    PURCHASE_PRICES: dict[str, float] = {
+        k.lower(): float(v) for k, v in json.loads(os.environ["PURCHASE_PRICES_JSON"]).items()
+    }
+except (KeyError, json.JSONDecodeError, ValueError) as e:
+    raise RuntimeError(
+        "Ошибка: необходимо задать переменную окружения PURCHASE_PRICES_JSON c корректным JSON, например: '{\"ethereum\": 2598, \"solana\": 165.87}'"
+    ) from e
 
 GROWTH_THRESHOLD = 0.5
 FALL_THRESHOLD = 0.25
@@ -36,9 +40,10 @@ def send_telegram_message(text: str) -> None:
         print("Ошибка при отправке сообщения в Telegram:", e)
 
 def get_prices() -> dict:
+    coin_ids = ','.join(PURCHASE_PRICES.keys())
     url = (
         f"https://api.coingecko.com/api/v3/simple/price"
-        f"?ids={','.join(COIN_IDS)}&vs_currencies={VS_CURRENCY}"
+        f"?ids={coin_ids}&vs_currencies={VS_CURRENCY}"
     )
     response = requests.get(url, timeout=10)
     response.raise_for_status()
@@ -55,8 +60,7 @@ def check_and_notify() -> None:
     lines = [f"*Крипто-отчет от {now}*", "", "*Сводка:*"]
     alerts = []
 
-    for coin in COIN_IDS:
-        purchase = PURCHASE_PRICES[coin]
+    for coin, purchase in PURCHASE_PRICES.items():
         current = prices.get(coin, {}).get(VS_CURRENCY)
         current_disp = format_price(current) if current is not None else "_нет данных_"
         lines.append(
